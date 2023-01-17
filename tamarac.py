@@ -4,17 +4,8 @@ tamarac by Leo Fisher. some UCI code from https://github.com/healeycodes/andoma.
 import chess
 from engine import tamarac
 
-def talk():
-    """
-    The main input/output loop.
-    This implements a slice of the UCI protocol.
-    """
-    board = chess.Board()
-    depth = 4
 
-    while True:
-        msg = input()
-        command(depth, board, msg)
+
 
 
 def command(depth: int, board: chess.Board, msg: str):
@@ -31,8 +22,8 @@ def command(depth: int, board: chess.Board, msg: str):
         sys.exit()
 
     if msg == "uci":
-        print("id name Andoma")  # Andrew/Roma -> And/oma
-        print("id author Andrew Healey & Roma Parramore")
+        print("id name tamarac")
+        print("id author Leo Fisher")
         print("uciok")
         return
 
@@ -41,8 +32,7 @@ def command(depth: int, board: chess.Board, msg: str):
         return
 
     if msg == "ucinewgame":
-        del tamarac
-        engine = tamarac()
+        #del engine
         return
 
     if msg.startswith("position"):
@@ -73,9 +63,24 @@ def command(depth: int, board: chess.Board, msg: str):
         print(board.fen())
 
     if msg[0:2] == "go":
-        _move = engine.search(depth, board)
+        _move = eng.search(depth, board)
         print(f"bestmove {_move}")
         return
 
-talk()
+def get_depth() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--depth", default=3, help="provide an integer (default: 3)")
+    args = parser.parse_args()
+    return max([1, int(args.depth)])
+
+
+board = chess.Board()
+depth = 5
+eng = tamarac()
+
+while True:
+        msg = input()
+        command(depth, board, msg)
+    
+
         

@@ -1,4 +1,4 @@
-#tamarac.py
+#engine.py
 
 import chess
 import sys
@@ -15,7 +15,7 @@ class node():
     def create_best_child:
 """    
 
-class engine:
+class tamarac:
     def __init__(self):
         self.hash_table = {}
         #self.quiescent_hash_table = {}
@@ -24,19 +24,19 @@ class engine:
         #self.node_table = {}
 
     
-    def search(self, board, *args):
+    def search(self, depth, board, *args):
         self.nodes = 0
         self.revisit = 0
-        result = PlayResult(self.root_pvs(board, -10000000, 10000000, 4), None)
+        result = self.root_pvs(board, -10000000, 10000000, depth)
         log = open("log.txt","a")
         #fin_nodes = str(self.revisit)
         log.write("nodes:" + str(self.nodes) + " revisits:" + str(self.revisit) + "\n")
         log.close()
         for entry in list(self.hash_table):
-            depth = self.hash_table[entry][1]
-            depth = depth + 1
-            self.hash_table[entry][1] = depth
-            if depth >= 4:
+            curr_depth = self.hash_table[entry][1]
+            curr_depth = curr_depth + 1
+            self.hash_table[entry][1] = curr_depth
+            if curr_depth >= depth:
                 del self.hash_table[entry]
         return result
     
@@ -67,24 +67,56 @@ class engine:
        
         return score + len(list(board.legal_moves))
     
+    def order_moves(self, board):
+        captures = []
+        non_captures = []
+        moves = list(board.legal_moves)
+        for move in moves:
+            if board.is_capture(move):
+                captures.append(move)
+            else:
+                non_captures.append(move)
+        return captures + non_captures
+        
+        
+    def mtdf(self, board, firstguess, depth):
+        guess = firstguess
+        upperbound = 10000000
+        lowerbound = -10000000
+        while not lowerbound >= upperbound:
+            if guess == lowerbound:
+                beta = g + 1
+            else:
+                beta = g
+            g = self.pvs(board, beta - 1, beta, depth) 
+            if g < beta:
+                upperbound = g
+            else:
+                lowerbound = g
+        return g
     
     def pvs(self, board, alpha, beta, depth):
         self.nodes = self.nodes+1
         
+        if board.is_stalemate() or board.is_repetition(): #this should prevent the bot from drawing the game if it's ahead but encourage it if it's losing
+            return 0
+        if board.is_checkmate():
+            return 1000000
         
+        bestmove = list(board.legal_moves)[0]
+        ordered_moves = self.order_moves(board)
         if zobrist_hash(board) in self.hash_table:
-            if  self.hash_table[zobrist_hash(board)][1] <= depth:#check to make sure we haven't been here before
+            ordered_moves = [self.hash_table[zobrist_hash(board)][2]] + ordered_moves
+            if  self.hash_table[zobrist_hash(board)][1] < depth:#check to make sure we haven't been here before
                 self.revisit = self.revisit +1
                 return self.hash_table[zobrist_hash(board)][0]
         
         if depth == 0:
-            result = self.evaluate(board)
+            result = self.quiesce(board, alpha, beta)
             self.hash_table[zobrist_hash(board)] = [result, depth,5]
             return result
-        if board.is_stalemate() or board.is_repetition(): #this should prevent the bot from drawing the game if it's ahead but encourage it if it's losing
-            return 0
         bsearchpv = True
-        for move in list(board.legal_moves):
+        for move in ordered_moves:
             board.push(move)
             if bsearchpv:
                 score = -self.pvs(board,-beta,-alpha,depth-1)
@@ -94,12 +126,13 @@ class engine:
                     score = -self.pvs(board,-beta,-alpha,depth-1)
             board.pop()
             if score >= beta:
-                self.hash_table[zobrist_hash(board)] = [beta,depth,5]
+                self.hash_table[zobrist_hash(board)] = [beta,depth,move]
                 return beta
             if score > alpha:
                 alpha = score
+                bestmove = move
                 bsearchpv = False
-        self.hash_table[zobrist_hash(board)] = [alpha,depth,5]
+        self.hash_table[zobrist_hash(board)] = [alpha,depth,bestmove] #score,depth,age(starts at 5),PV  
         return alpha
         
     
@@ -125,7 +158,15 @@ class engine:
         return bestmove
     
     def quiesce(self, board, alpha, beta): #quiescence search
+    
+        
+    
         self.nodes = self.nodes + 1
+        """
+        if zobrist_hash(board) in self.hash_table:
+            self.revisit = self.revisit +1
+            return self.hash_table[zobrist_hash(board)][0]   
+        """
         #if zobrist_hash(board) in self.hash_table:        #check to make sure we haven't been here before
         #    return self.hash_table[zobrist_hash(board)]
         stand_pat = self.evaluate(board)

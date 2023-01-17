@@ -2,7 +2,8 @@
 
 import chess
 import sys
-from chess.engine import PlayResult
+from time import perf_counter_ns
+#from chess.engine import PlayResult
 from chess.polyglot import zobrist_hash
 
 """
@@ -27,7 +28,8 @@ class tamarac:
     def search(self, depth, board, *args):
         self.nodes = 0
         self.revisit = 0
-        result = self.root_pvs(board, -10000000, 10000000, depth)
+        #result = self.root_pvs(board,-10000000,10000000,3)
+        result = self.iterative_deepening(board)
         log = open("log.txt","a")
         #fin_nodes = str(self.revisit)
         log.write("nodes:" + str(self.nodes) + " revisits:" + str(self.revisit) + "\n")
@@ -78,43 +80,63 @@ class tamarac:
                 non_captures.append(move)
         return captures + non_captures
         
+    def iterative_deepening(self,board):
+        starttime = perf_counter_ns()
+        firstguess = 0
+        depth = 0
+        while True:
+            depth = depth+1
+            result = self.mtdf(board, firstguess, depth)
+            print("info depth " + str(depth) + " nodes " + str(self.nodes))
+            firstguess = -result[0]
+            if perf_counter_ns() - starttime > 7500000000:
+                return result[1]
+                
         
+    
     def mtdf(self, board, firstguess, depth):
-        guess = firstguess
+        g = firstguess
         upperbound = 10000000
         lowerbound = -10000000
+        result = []
         while not lowerbound >= upperbound:
-            if guess == lowerbound:
+            
+            if g == lowerbound:
                 beta = g + 1
             else:
                 beta = g
-            g = self.pvs(board, beta - 1, beta, depth) 
+            result = self.failsoft_alphabeta(board, beta - 1, beta, depth)
+            g = result[0]
             if g < beta:
                 upperbound = g
             else:
                 lowerbound = g
-        return g
+            print("info lowerbound " + str(lowerbound) + " upperbound " + str(upperbound))
+        return [g,result[1]]
     
     def pvs(self, board, alpha, beta, depth):
         self.nodes = self.nodes+1
         
-        if board.is_stalemate() or board.is_repetition(): #this should prevent the bot from drawing the game if it's ahead but encourage it if it's losing
-            return 0
-        if board.is_checkmate():
-            return 1000000
+        #if board.is_stalemate() or board.is_repetition(): #this should prevent the bot from drawing the game if it's ahead but encourage it if it's losing
+        #    return 0
+        #if board.is_checkmate():
+        #    return 1000000
         
         bestmove = list(board.legal_moves)[0]
         ordered_moves = self.order_moves(board)
         if zobrist_hash(board) in self.hash_table:
             ordered_moves = [self.hash_table[zobrist_hash(board)][2]] + ordered_moves
-            if  self.hash_table[zobrist_hash(board)][1] < depth:#check to make sure we haven't been here before
-                self.revisit = self.revisit +1
-                return self.hash_table[zobrist_hash(board)][0]
+            #if  self.hash_table[zobrist_hash(board)][1] < depth:#check to make sure we haven't been here before
+            #    self.revisit = self.revisit +1
+            #    return self.hash_table[zobrist_hash(board)][0]
+        
+        #==================Actual PVS Algorithm===================#
         
         if depth == 0:
             result = self.quiesce(board, alpha, beta)
-            self.hash_table[zobrist_hash(board)] = [result, depth,5]
+            #self.hash_table[zobrist_hash(board)] = [result, depth,5]
             return result
+        """
         bsearchpv = True
         for move in ordered_moves:
             board.push(move)
@@ -135,27 +157,69 @@ class tamarac:
         self.hash_table[zobrist_hash(board)] = [alpha,depth,bestmove] #score,depth,age(starts at 5),PV  
         return alpha
         
+        """
+        # New fail-soft implementation:
+        
+        board.push(ordered_moves[0])
+        bestscore = -self.pvs(board, -beta,-alpha, depth-1)
+        board.pop()
+        if bestscore > alpha:
+            if bestscore >= beta:
+                self.hash_table[zobrist_hash(board)] = [bestscore,depth,ordered_moves[0]]
+                return bestscore
+            alpha = bestscore
+        ordered_moves.pop(0)
+        for move in ordered_moves:
+            board.push(move)
+            score = -self.pvs(board, alpha-1, alpha, depth-1)
+            if score > alpha and score < beta:
+                score = -self.pvs(board,-beta,-alpha, depth-1)
+                if score > alpha:
+                    alpha = score
+            board.pop()
+            if score > bestscore:
+                if score >= beta:
+                    self.hash_table[zobrist_hash(board)] = [score,depth,move]
+                    return score
+                bestscore = score
+                bestmove = move
+        self.hash_table[zobrist_hash(board)] = [bestscore,depth,bestmove]
+        return bestscore 
+        
+        
+    
+        
     
     def root_pvs(self, board, alpha, beta, depth):
         
-        bsearchpv = True
-        bestmove = list(board.legal_moves)[0]
-        for move in list(board.legal_moves):
+        ordered_moves = self.order_moves(board)
+        
+        board.push(ordered_moves[0])
+        bestmove = ordered_moves[0]
+        bestscore = -self.pvs(board, -beta,-alpha, depth-1)
+        board.pop()
+        if bestscore > alpha:
+            if bestscore >= beta:
+                #self.hash_table[zobrist_hash(board)] = [bestscore,depth,ordered_moves[0]]
+                return [ordered_moves[0],bestscore]
+            alpha = bestscore
+        ordered_moves.pop(0)
+        for move in ordered_moves:
             board.push(move)
-            if bsearchpv:
-                score = -self.pvs(board,-beta,-alpha,depth-1)
-            else:
-                score = -self.pvs(board,-alpha-1, -alpha,depth-1)
+            score = -self.pvs(board, alpha-1, alpha, depth-1)
+            if score > alpha and score < beta:
+                score = -self.pvs(board,-beta,-alpha, depth-1)
                 if score > alpha:
-                    score = -self.pvs(board,-beta,-alpha,depth-1)
+                    alpha = score
             board.pop()
-            if score >= beta:
-                return move
-            if score > alpha:
-                alpha = score
+            if score > bestscore:
+                if score >= beta:
+                    #self.hash_table[zobrist_hash(board)] = [score,depth,move]
+                    return [move,score]
+                bestscore = score
                 bestmove = move
-                bsearchpv = False
-        return bestmove
+        #self.hash_table[zobrist_hash(board)] = [bestscore,depth,bestmove]
+        return [bestmove,bestscore]
     
     def quiesce(self, board, alpha, beta): #quiescence search
     
@@ -218,42 +282,92 @@ class tamarac:
         except:
             return list(board.legal_moves)[0]
     """
-    """
     
+    """
     def root_alphabeta(self, board, alpha, beta, depth):
+        best_move = list(board.legal_moves)[0]
         for move in list(board.legal_moves):
             board.push(move)
             score = -self.alphabeta(board, -beta, -alpha, depth-1)
+            board.pop()
             if score >= beta:
                 best_move = move
-                board.pop()
-                return best_move
+                return [best_move,score]
             if score > alpha:
                 alpha = score  
                 best_move = move
-            board.pop()
-        try:
-            return best_move
-        except:
-            return list(board.legal_moves)[0]
+            #board.pop()
+        return [best_move,alpha]
     
     
     
     def alphabeta(self, board, alpha, beta, depth):
+        self.nodes = self.nodes+1
+        
+        if board.is_stalemate() or board.is_repetition(): #this should prevent the bot from drawing the game if it's ahead but encourage it if it's losing
+            return 0
+        if board.is_checkmate():
+            return 1000000
+        
+        bestmove = list(board.legal_moves)[0]
+        ordered_moves = self.order_moves(board)
+        if zobrist_hash(board) in self.hash_table:
+            ordered_moves = [self.hash_table[zobrist_hash(board)][2]] + ordered_moves
+            if  self.hash_table[zobrist_hash(board)][1] < depth:#check to make sure we haven't been here before
+                self.revisit = self.revisit +1
+                return self.hash_table[zobrist_hash(board)][0]
+        
         if depth == 0:
-            return self.evaluate(board)
+            result = self.quiesce(board, alpha, beta)
+            self.hash_table[zobrist_hash(board)] = [result, depth,5]
+            return result
+
         if board.is_stalemate() or board.is_repetition():
             return 0
         for move in list(board.legal_moves):
             board.push(move)
             score = -self.alphabeta(board, -beta, -alpha, depth-1)
+            board.pop()
             if score >= beta:
-                board.pop()
+                self.hash_table[zobrist_hash(board)] = [beta,depth,move]
                 return beta
             if score > alpha:
                 alpha = score
+                best_move = move
             board.pop()                
-        return alpha    
+        self.hash_table[zobrist_hash(board)] = [alpha,depth,bestmove] #score,depth,age(starts at 5),PV  
+        return alpha   
     
     """
+    
+    def failsoft_alphabeta(self, board, alpha, beta, depth):
+        self.nodes = self.nodes + 1
+        
+        if depth == 0:
+            return [self.quiesce(board, alpha, beta)]
+        
+        bestmove = list(board.legal_moves)[0]
+        ordered_moves = self.order_moves(board)
+        if zobrist_hash(board) in self.hash_table:
+            ordered_moves.remove(self.hash_table[zobrist_hash(board)][2])
+            ordered_moves = [self.hash_table[zobrist_hash(board)][2]] + ordered_moves
+        
+        bestscore = -10000000
+        for move in ordered_moves:
+            board.push(move)
+            result = self.failsoft_alphabeta(board,-beta,-alpha,depth-1)
+            score = 0 - result[0]
+            board.pop()
+            if score >= beta:
+                self.hash_table[zobrist_hash(board)] = [score,depth,move]
+                return [score,move]
+            if score > bestscore:
+                bestscore = score
+                if score > alpha:
+                    alpha = score
+                bestmove = move
+        self.hash_table[zobrist_hash(board)] = [alpha,depth,bestmove]
+        return [alpha,bestmove]
+        
+        
     

@@ -3,6 +3,7 @@ tamarac by Leo Fisher. some UCI code from https://github.com/healeycodes/andoma.
 """
 import chess
 from engine import tamarac
+import argparse
 
 
 
@@ -75,7 +76,7 @@ def get_depth() -> int:
 
 
 board = chess.Board()
-depth = 5
+depth = get_depth()
 eng = tamarac()
 
 while True:

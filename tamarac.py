@@ -64,24 +64,24 @@ def command(depth: int, board: chess.Board, msg: str):
         print(board.fen())
 
     if msg[0:2] == "go":
-        _move = eng.search(depth, board)
+        _move = eng.search(time, board)
         print(f"bestmove {_move}")
         return
 
-def get_depth() -> int:
+def get_time() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--depth", default=3, help="provide an integer (default: 3)")
+    parser.add_argument("--time", default=5000000000, help="time to search for a move, in nanonseconds. (default: 5000000000)")
     args = parser.parse_args()
-    return max([1, int(args.depth)])
+    return max([1, int(args.time)])
 
 
 board = chess.Board()
-depth = get_depth()
+time = get_time()
 eng = tamarac()
 
 while True:
         msg = input()
-        command(depth, board, msg)
+        command(time, board, msg)
     
 
         

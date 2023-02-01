@@ -1,18 +1,86 @@
 //castling move check code by crippa#9590
 
-use cozy_chess::{Move, Board, Square, Piece};
+use cozy_chess::{Move, Board, Square, Piece, Color};
 use std::io;
 use vampirc_uci::parse;
 use vampirc_uci::{UciMessage, MessageList, UciTimeControl, Serializable};
 
-fn search(brd: &Board) -> Move {
-    let mut move_list = Vec::new();
-    brd.generate_moves(|moves| {
+const VALUES: [[i32; 6]; 1] = [[100, 300, 300, 500, 900,10000]]; //king value must be greater than 9x queen + 2x rest of pieces
+const POS_INFINITY: i32 = i32::MAX - 256;
+const NEG_INFINITY: i32 = i32::MIN + 256;
+
+fn evaluate(brd: &Board) -> i32 {
+	let mut total: i32 = 0;
+	for clr in Color::ALL{
+		for x in 0..5 {
+			let mut pieces: i32 = brd.colored_pieces(clr, *Piece::ALL.get(x).unwrap()).len().try_into().unwrap();
+			if clr == Color::Black {
+				pieces = 0 - pieces;
+			}
+			total = pieces * VALUES[0][x] + total;
+		}
+	}
+	if brd.side_to_move() == Color::Black {
+		total = 0 - total;
+	}
+	total.try_into().unwrap()
+}
+
+fn alphabeta(brd: &Board, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+	if depth == 0 {
+		return evaluate(brd);
+	}
+	let mut move_list = Vec::new();
+	brd.generate_moves(|moves| {
         // Unpack dense move set into move list
         move_list.extend(moves);
         false
     });
-    *move_list.get(0).unwrap()
+	let mut bestscore = NEG_INFINITY;
+	for mov in move_list {
+		let mut new_brd = brd.clone();
+		new_brd.play(mov);
+		let score = alphabeta(&new_brd, depth - 1, 0 - beta, 0 - alpha);
+		if score >= beta {
+			return score;
+		}
+		if score > bestscore {
+			bestscore = score;
+			if score > alpha {
+				alpha = score;
+			}
+		}
+	}
+	bestscore
+}
+
+fn root_alphabeta(brd: &Board, depth: u32,) -> Move {
+	let mut move_list = Vec::new();
+	brd.generate_moves(|moves| {
+        // Unpack dense move set into move list
+        move_list.extend(moves);
+        false
+    });
+	let mut bestscore = NEG_INFINITY;
+	let mut bestmove = move_list[0];
+	let mut alpha = NEG_INFINITY;
+	for mov in move_list {
+		let mut new_brd = brd.clone();
+		new_brd.play(mov);
+		let score = alphabeta(&new_brd, depth - 1, NEG_INFINITY, 0 - alpha);
+		if score > bestscore {
+			bestmove = mov;
+			bestscore = score;
+			if score > alpha {
+				alpha = score;
+			}
+		}
+	}
+	bestmove
+}
+
+fn search(brd: &Board) -> Move {
+    root_alphabeta(brd, 7)
 }
 
 fn check_castling_move(board: &Board, mut mv: Move) -> Move {
@@ -29,6 +97,7 @@ fn check_castling_move(board: &Board, mut mv: Move) -> Move {
 }
 
 fn main() {
+	assert_eq!(Piece::ALL.get(0).unwrap(), &Piece::Pawn);
     let mut board = Board::default();
     loop {
         let mut cmd = String::new();

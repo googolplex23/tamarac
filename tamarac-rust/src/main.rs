@@ -2,12 +2,16 @@
 
 use cozy_chess::{Move, Board, Square, Piece, Color};
 use std::io;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use vampirc_uci::parse;
 use vampirc_uci::{UciMessage, MessageList, UciTimeControl, Serializable};
 
-const VALUES: [[i32; 6]; 1] = [[100, 300, 300, 500, 900,10000]]; //king value must be greater than 9x queen + 2x rest of pieces
+const VALUES: ([i32; 6], i32) = ([100, 300, 300, 500, 900,10000],50); //king value must be greater than 9x queen + 2x rest of pieces
 const POS_INFINITY: i32 = i32::MAX - 256;
 const NEG_INFINITY: i32 = i32::MIN + 256;
+
+static NODE_CTR: AtomicU64 = AtomicU64::new(0);
 
 fn list_moves(brd: &Board) -> Vec<Move> {
     let mut move_list = Vec::new();
@@ -24,7 +28,12 @@ fn evaluate(brd: &Board) -> i32 {
 	for clr in Color::ALL{
 		for x in 0..5 {
 			let mut pieces: i32 = brd.colored_pieces(clr, *Piece::ALL.get(x).unwrap()).len().try_into().unwrap();
-            pieces = pieces * VALUES[0][x];
+            /*
+            if x == 2 && pieces == 2 {
+                total = total + VALUES.1
+            }
+            */
+            pieces = pieces * VALUES.0[x];
 			if clr == Color::Black {
 				pieces = 0 - pieces;
 			}
@@ -43,6 +52,7 @@ fn evaluate(brd: &Board) -> i32 {
 }
 
 fn alphabeta(brd: &Board, depth: u32, mut alpha: i32, beta: i32) -> i32 {
+    NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
 	if depth == 0 {
 		return evaluate(brd);
 	}
@@ -66,6 +76,7 @@ fn alphabeta(brd: &Board, depth: u32, mut alpha: i32, beta: i32) -> i32 {
 }
 
 fn root_alphabeta(brd: &Board, depth: u32,) -> Move {
+    NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
 	let mut move_list = Vec::new();
 	brd.generate_moves(|moves| {
         // Unpack dense move set into move list
@@ -87,11 +98,20 @@ fn root_alphabeta(brd: &Board, depth: u32,) -> Move {
 			}
 		}
 	}
+    println!("info score cp {bestscore}");
 	bestmove.unwrap()
 }
 
 fn search(brd: &Board) -> Move {
-    root_alphabeta(brd, 7)
+    NODE_CTR.store(0, Ordering::Relaxed);
+    let start = Instant::now();
+    let mov = root_alphabeta(brd, 7);
+    let time = start.elapsed().as_millis() as u64;
+    let nodes = NODE_CTR.load(Ordering::Relaxed);
+    let nps = nodes*1000/time;
+    println!("info nodes {nodes} nps {nps} time {time}");
+    mov
+    
 }
 
 fn check_castling_move(board: &Board, mut mv: Move) -> Move {

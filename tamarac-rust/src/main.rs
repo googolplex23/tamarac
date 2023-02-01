@@ -9,33 +9,44 @@ const VALUES: [[i32; 6]; 1] = [[100, 300, 300, 500, 900,10000]]; //king value mu
 const POS_INFINITY: i32 = i32::MAX - 256;
 const NEG_INFINITY: i32 = i32::MIN + 256;
 
+fn list_moves(brd: &Board) -> Vec<Move> {
+    let mut move_list = Vec::new();
+	brd.generate_moves(|moves| {
+        // Unpack dense move set into move list
+        move_list.extend(moves);
+        false
+    });
+    move_list
+}
+
 fn evaluate(brd: &Board) -> i32 {
 	let mut total: i32 = 0;
 	for clr in Color::ALL{
 		for x in 0..5 {
 			let mut pieces: i32 = brd.colored_pieces(clr, *Piece::ALL.get(x).unwrap()).len().try_into().unwrap();
+            pieces = pieces * VALUES[0][x];
 			if clr == Color::Black {
 				pieces = 0 - pieces;
 			}
-			total = pieces * VALUES[0][x] + total;
+			total = pieces + total;
 		}
+		if clr == Color::Black {
+			total = 0 - total;
+		}
+        
 	}
 	if brd.side_to_move() == Color::Black {
 		total = 0 - total;
 	}
-	total.try_into().unwrap()
+    //println!("{}", total);
+	total
 }
 
 fn alphabeta(brd: &Board, depth: u32, mut alpha: i32, beta: i32) -> i32 {
 	if depth == 0 {
 		return evaluate(brd);
 	}
-	let mut move_list = Vec::new();
-	brd.generate_moves(|moves| {
-        // Unpack dense move set into move list
-        move_list.extend(moves);
-        false
-    });
+	let move_list = list_moves(brd);
 	let mut bestscore = NEG_INFINITY;
 	for mov in move_list {
 		let mut new_brd = brd.clone();
@@ -62,21 +73,21 @@ fn root_alphabeta(brd: &Board, depth: u32,) -> Move {
         false
     });
 	let mut bestscore = NEG_INFINITY;
-	let mut bestmove = move_list[0];
+	let mut bestmove = None;
 	let mut alpha = NEG_INFINITY;
 	for mov in move_list {
 		let mut new_brd = brd.clone();
 		new_brd.play(mov);
 		let score = alphabeta(&new_brd, depth - 1, NEG_INFINITY, 0 - alpha);
 		if score > bestscore {
-			bestmove = mov;
+			bestmove = Some(mov);
 			bestscore = score;
 			if score > alpha {
 				alpha = score;
 			}
 		}
 	}
-	bestmove
+	bestmove.unwrap()
 }
 
 fn search(brd: &Board) -> Move {

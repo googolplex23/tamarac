@@ -8,8 +8,8 @@ use vampirc_uci::parse;
 use vampirc_uci::{UciMessage, MessageList, UciTimeControl};
 
 const VALUES: ([i32; 6], i32, i32) = ([100, 300, 300, 500, 900,10000],50,40); //king value must be greater than 9x queen + 2x rest of pieces
-//const POS_INFINITY: i32 = i32::MAX - 256;
-const NEG_INFINITY: i32 = i32::MIN + 256;
+const POS_INFINITY: i32 = 10240;
+const NEG_INFINITY: i32 = -10240;
 
 static NODE_CTR: AtomicU64 = AtomicU64::new(0);
 static SCORE: AtomicI32 = AtomicI32::new(0);
@@ -31,6 +31,21 @@ fn list_moves(brd: &Board) -> Vec<Move> {
     move_list
 }
 
+fn list_captures(brd: &Board) -> Vec<Move> {
+    let enemy_pieces = brd.colors(!brd.side_to_move());
+    let mut move_list = Vec::new();
+    brd.generate_moves(|moves| {
+        let mut captures = moves.clone();
+        // Bitmask to efficiently get all captures set-wise.
+        // Excluding en passant square for convenience.
+        captures.to &= enemy_pieces;
+        move_list.extend(captures);
+        false
+    });
+    move_list
+}
+
+
 fn evaluate(brd: &Board) -> i32 {
 	let mut all_total: i32 = 0;
 	for clr in Color::ALL{
@@ -45,12 +60,23 @@ fn evaluate(brd: &Board) -> i32 {
             pieces = pieces * VALUES.0[x];
 			total = total + pieces;
 		}
+        //total = total + 10 * list_moves(brd).len() as i32;
+        //10 * (list_moves(brd).len() as i32))
 		if clr == Color::Black {
 			total = 0 - total;
 		}
 		all_total = all_total + total
         
 	}
+    /*
+    let mut move_count = 0;
+    brd.generate_moves(|moves| {
+        // Unpack dense move set into move list
+        move_count += moves.len();
+        false
+    });
+    all_total = all_total + 10 * move_count as i32;
+    */
 	if brd.side_to_move() == Color::Black {
 		all_total = 0 - all_total;
 	}
@@ -61,7 +87,8 @@ fn evaluate(brd: &Board) -> i32 {
 fn alphabeta(brd: &Board, depth: u32, mut alpha: i32, beta: i32) -> i32 {
     NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
 	if depth == 0 {
-		return evaluate(brd);
+		return quiesce(brd,alpha,beta);
+        //return evaluate(brd);
 	}
 	let move_list = list_moves(brd);
 	let mut bestscore = NEG_INFINITY;
@@ -82,7 +109,38 @@ fn alphabeta(brd: &Board, depth: u32, mut alpha: i32, beta: i32) -> i32 {
 	bestscore
 }
 
-fn root_alphabeta(brd: &Board, depth: u32,) -> Move {
+
+fn quiesce(brd: &Board, mut alpha: i32, beta: i32) -> i32 {
+    NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
+	let mut bestscore = evaluate(brd);
+    if bestscore >= beta {
+        return beta;
+    }
+    if alpha < bestscore {
+        alpha = bestscore;
+    }
+	let move_list = list_captures(brd);
+	for mov in move_list {
+		let mut new_brd = brd.clone();
+		new_brd.play(mov);
+		let score = 0 - quiesce(&new_brd, 0 - beta, 0 - alpha);
+		if score >= beta {
+			return score;
+		}
+		if score > bestscore {
+			bestscore = score;
+			if score > alpha {
+				alpha = score;
+			}
+		}
+	}
+	bestscore
+}
+
+
+//fn BNS
+
+fn root_alphabeta(brd: &Board, depth: u32) -> Move {
     NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
 	let move_list = list_moves(brd);
 	let mut bestscore = NEG_INFINITY;
@@ -95,7 +153,7 @@ fn root_alphabeta(brd: &Board, depth: u32,) -> Move {
 		if score > bestscore {
 			bestmove = Some(mov);
 			bestscore = score;
-			println!("info string score {score} bestscore {bestscore}");
+			//println!("info string score {score} bestscore {bestscore}");
 			if score > alpha {
 				alpha = score;
 			}
@@ -137,7 +195,7 @@ fn check_castling_move(board: &Board, mut mv: Move) -> Move {
 }
 
 fn main() {
-	assert_eq!(0, evaluate(&Board::default()));
+	//assert_eq!(0, evaluate(&Board::default()));
     let mut board = Board::default();
     loop {
         let mut cmd = String::new();
@@ -178,7 +236,7 @@ fn main() {
 								} else {
 									remaining_ms = Some(white_time.unwrap().to_std().unwrap());
 								}
-								time = Duration::from_millis((remaining_ms.unwrap().as_millis() as i32 / VALUES.2).try_into().unwrap());
+								time = Duration::from_millis(std::cmp::min(5000, remaining_ms.unwrap().as_millis() as i32 / VALUES.2).try_into().unwrap());
 							}
 						},
 						_ => time = Duration::new(5,0), 

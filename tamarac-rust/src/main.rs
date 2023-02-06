@@ -4,15 +4,18 @@ use cozy_chess::{Move, Board, Square, Piece, Color};
 use std::io;
 use std::sync::atomic::{AtomicU64, AtomicI32, Ordering};
 use std::time::{Instant, Duration};
+use std::collections::HashMap;
 use vampirc_uci::parse;
 use vampirc_uci::{UciMessage, MessageList, UciTimeControl};
+
+mod alphabeta;
 
 const VALUES: ([i32; 6], i32, i32) = ([100, 300, 300, 500, 900,10000],50,40); //king value must be greater than 9x queen + 2x rest of pieces
 const POS_INFINITY: i32 = 10240;
 const NEG_INFINITY: i32 = -10240;
 
 static NODE_CTR: AtomicU64 = AtomicU64::new(0);
-static SCORE: AtomicI32 = AtomicI32::new(0);
+//static SCORE: AtomicI32 = AtomicI32::new(0);
 
 /*
 struct PVtable(Vec<Entry>);
@@ -21,174 +24,11 @@ struct Entry {
 	hash = 
 }
 */
-fn list_moves(brd: &Board) -> Vec<Move> {
-    let mut move_list = Vec::new();
-	let mut capture_list = Vec::new();
-	let enemy_pieces = brd.colors(!brd.side_to_move());
-	brd.generate_moves(|moves| {
-		let mut captures = moves.clone();
-		let mut non_captures = moves.clone();
-		
-		captures.to &= enemy_pieces;
-		non_captures.to &= !enemy_pieces;
-        // Unpack dense move set into move list
-        move_list.extend(non_captures);
-		capture_list.extend(captures);
-        false
-    });
-    capture_list.append(&mut move_list);
-	capture_list
-}
-
-fn list_captures(brd: &Board) -> Vec<Move> {
-    let enemy_pieces = brd.colors(!brd.side_to_move());
-    let mut move_list = Vec::new();
-    brd.generate_moves(|moves| {
-        let mut captures = moves.clone();
-        // Bitmask to efficiently get all captures set-wise.
-        // Excluding en passant square for convenience.
-        captures.to &= enemy_pieces;
-        move_list.extend(captures);
-        false
-    });
-    move_list
-}
 
 
-fn evaluate(brd: &Board) -> i32 {
-	let mut all_total: i32 = 0;
-	for clr in Color::ALL{
-		let mut total: i32 = 0;
-		for x in 0..5 {
-			let mut pieces: i32 = brd.colored_pieces(clr, *Piece::ALL.get(x).unwrap()).len().try_into().unwrap();
-            /*
-            if x == 2 && pieces == 2 {
-                total = total + VALUES.1
-            }
-            */
-            pieces = pieces * VALUES.0[x];
-			total = total + pieces;
-		}
-        //total = total + 10 * list_moves(brd).len() as i32;
-        //10 * (list_moves(brd).len() as i32))
-		if clr == Color::Black {
-			total = 0 - total;
-		}
-		all_total = all_total + total
-        
-	}
-    /*
-    let mut move_count = 0;
-    brd.generate_moves(|moves| {
-        // Unpack dense move set into move list
-        move_count += moves.len();
-        false
-    });
-    all_total = all_total + 10 * move_count as i32;
-    */
-	if brd.side_to_move() == Color::Black {
-		all_total = 0 - all_total;
-	}
-    //println!("{}", total);
-	all_total
-}
-
-fn alphabeta(brd: &Board, depth: i32, maxdepth: i32, stoptime: Instant, mut alpha: i32, beta: i32) -> i32 {
-    NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
-	if Instant::now().checked_duration_since(stoptime).is_some() {
-		return 0
-	}
-	if depth == 0 {
-		return quiesce(brd,stoptime,alpha,beta);
-        //return evaluate(brd);
-	}
-	let move_list = list_moves(brd);
-	if move_list.len() == 0 {
-		if brd.checkers().len() == 0 {
-			return 0 + (maxdepth-depth);
-		} else {
-			return NEG_INFINITY + (maxdepth-depth);
-		}
-	}
-	let mut bestscore = NEG_INFINITY;
-	for mov in move_list {
-		let mut new_brd = brd.clone();
-		new_brd.play(mov);
-		let score = 0 - alphabeta(&new_brd, depth - 1, maxdepth, stoptime, 0 - beta, 0 - alpha);
-		if score >= beta {
-			return score;
-		}
-		if score > bestscore {
-			bestscore = score;
-			if score > alpha {
-				alpha = score;
-			}
-		}
-	}
-	bestscore
-}
 
 
-fn quiesce(brd: &Board, stoptime: Instant, mut alpha: i32, beta: i32) -> i32 {
-    NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
-	if Instant::now().checked_duration_since(stoptime).is_some() {
-		return 0
-	}
-	let mut bestscore = evaluate(brd);
-    if bestscore >= beta {
-        return beta;
-    }
-	
-	if bestscore < alpha - VALUES.0[4] {
-		return alpha
-	}
-	
-    if alpha < bestscore {
-        alpha = bestscore;
-    }
-	let move_list = list_captures(brd);
-	for mov in move_list {
-		let mut new_brd = brd.clone();
-		new_brd.play(mov);
-		let score = 0 - quiesce(&new_brd, stoptime, 0 - beta, 0 - alpha);
-		if score >= beta {
-			return score;
-		}
-		if score > bestscore {
-			bestscore = score;
-			if score > alpha {
-				alpha = score;
-			}
-		}
-	}
-	bestscore
-}
 
-
-//fn BNS
-
-fn root_alphabeta(brd: &Board, stoptime: Instant, depth: i32) -> Move {
-    NODE_CTR.store(NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
-	let move_list = list_moves(brd);
-	let mut bestscore = NEG_INFINITY;
-	let mut bestmove = None;
-	let mut alpha = NEG_INFINITY;
-	for mov in move_list {
-		let mut new_brd = brd.clone();
-		new_brd.play(mov);
-		let score = 0 - alphabeta(&new_brd, depth - 1, depth, stoptime, NEG_INFINITY, 0 - alpha);
-		if score > bestscore {
-			bestmove = Some(mov);
-			bestscore = score;
-			//println!("info string score {score} bestscore {bestscore}");
-			if score > alpha {
-				alpha = score;
-			}
-		}
-	}
-    SCORE.store(bestscore, Ordering::Relaxed);
-	bestmove.unwrap()
-}
 
 fn search(brd: &Board, time: &Duration) -> Move {
     NODE_CTR.store(0, Ordering::Relaxed);
@@ -196,18 +36,25 @@ fn search(brd: &Board, time: &Duration) -> Move {
 	let mut depth = 1;
 	let mut mov = None;
 	let mut best_moves = Vec::new();
+    let mut transtable = HashMap::new();
+    let mut score_list = Vec::new();
 	while start.elapsed() < *time {
-		mov = Some(root_alphabeta(brd, start + *time, depth));
+        let result = alphabeta::root_alphabeta(brd, transtable, start + *time, depth);
+		transtable = result.1;
+        mov = Some(result.0);
 		best_moves.push(mov);
 		depth = depth + 1;
+        score_list.push(result.2);
 	}
 	best_moves.pop();
 	mov = best_moves.pop().unwrap();
+    score_list.pop();
+    let mut score = score_list.pop().unwrap();
 	depth = depth - 1;
     let end = start.elapsed().as_millis() as u64;
     let nodes = NODE_CTR.load(Ordering::Relaxed);
     let nps = nodes*1000/end;
-	let mut score = SCORE.load(Ordering::Relaxed);
+	//let mut score = SCORE.load(Ordering::Relaxed);
 	if -10000 < score && score < 10000 {
 		println!("info depth {depth} nodes {nodes} nps {nps} time {end} score cp {score}");
 	} else if score >= 10000 {

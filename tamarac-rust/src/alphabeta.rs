@@ -23,6 +23,8 @@ pub fn alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, depth: i32, max
 		if brd.checkers().len() == 0 {
 			return (0 + (maxdepth-depth),transtable);
 		} else {
+			let matescore = crate::NEG_INFINITY + (maxdepth-depth);
+			//println!("info string depth {depth} maxdepth {maxdepth} matescore {matescore}");
 			return (crate::NEG_INFINITY + (maxdepth-depth),transtable);
 		}
 	}
@@ -39,7 +41,7 @@ pub fn alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, depth: i32, max
 	for mov in move_list {
 		let mut new_brd = brd.clone();
 		new_brd.play(mov);
-		let result = alphabeta(&new_brd, transtable, depth - 1, depth, stoptime, 0-beta , 0 - alpha);
+		let result = alphabeta(&new_brd, transtable, depth - 1, maxdepth, stoptime, 0-beta , 0 - alpha);
         transtable = result.1;
 		let score = 0 - result.0;
 		if score >= beta {
@@ -57,6 +59,7 @@ pub fn alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, depth: i32, max
     if bestmove.is_some() {
         transtable.insert(brd.hash(),bestmove.unwrap());
     }
+
 	(bestscore,transtable)
 }
 
@@ -82,5 +85,6 @@ pub fn root_alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, stoptime: 
 		}
 	}
     //crate::SCORE.store(bestscore, Ordering::Relaxed);
+	//println!("{}", bestscore);
 	(bestmove.unwrap(),transtable,bestscore)
 }

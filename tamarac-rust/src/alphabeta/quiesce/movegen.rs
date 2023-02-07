@@ -32,3 +32,4 @@ pub fn list_captures(brd: &Board) -> Vec<Move> {
     });
     move_list
 }
+

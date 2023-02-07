@@ -1,7 +1,7 @@
 use cozy_chess::{Move, Board, Square, Piece, Color};
 use std::io;
-use std::sync::atomic::{AtomicU64, AtomicI32, Ordering};
-use std::time::{Instant, Duration};
+use std::sync::atomic::{Ordering};
+use std::time::{Instant};
 use std::collections::HashMap;
 
 pub mod movegen;

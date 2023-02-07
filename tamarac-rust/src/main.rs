@@ -10,7 +10,7 @@ use vampirc_uci::{UciMessage, MessageList, UciTimeControl};
 
 mod alphabeta;
 
-const VALUES: ([i32; 6], i32, i32) = ([100, 300, 300, 500, 900,10000],50,40); //king value must be greater than 9x queen + 2x rest of pieces
+const VALUES: ([i32; 6], i32, i32, i32) = ([100, 300, 300, 500, 900,10000],50,40,-400); //king value must be greater than 9x queen + 2x rest of pieces
 const POS_INFINITY: i32 = 10240;
 const NEG_INFINITY: i32 = -10240;
 
@@ -38,13 +38,18 @@ fn search(brd: &Board, time: &Duration) -> Move {
 	let mut best_moves = Vec::new();
     let mut transtable = HashMap::new();
     let mut score_list = Vec::new();
+    let mut alpha = NEG_INFINITY;
+    let mut beta = POS_INFINITY;
 	while start.elapsed() < *time {
-        let result = alphabeta::root_alphabeta(brd, transtable, start + *time, depth);
+        let result = alphabeta::bns(brd, transtable, start + *time, depth, alpha, beta);
 		transtable = result.1;
         mov = Some(result.0);
 		best_moves.push(mov);
 		depth = depth + 1;
         score_list.push(result.2);
+        alpha = result.2;
+        beta = result.3;
+        
 	}
 	best_moves.pop();
 	mov = best_moves.pop().unwrap();

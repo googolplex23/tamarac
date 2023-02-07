@@ -9,6 +9,55 @@ mod quiesce;
 
 use quiesce::movegen::list_moves;
 
+pub fn bns(brd: &Board, mut transtable: HashMap<u64,Move>, stoptime: Instant, depth: i32, mut alpha: i32, mut beta: i32) -> (Move,HashMap<u64,Move>,i32,i32) {
+    let mut move_list = list_moves(brd);
+    let mut bestmove = Some(move_list[0]);
+    let mut movecnt = 0;
+    let mut finalpha = 0;
+    let mut finbeta = 0;
+    while 1 == 1 {
+        //finalpha = alpha;
+        finbeta = beta;
+        let mut bettermoves = Vec::new();
+        let mut test = alpha + (beta - alpha) / 2;
+        for mov in &move_list {
+            let mut new_brd = brd.clone();
+		    new_brd.play(*mov);
+            let result = alphabeta(&new_brd, transtable, depth - 1, depth, stoptime, 0-test , 0-(test-1));
+            transtable = result.1;
+            let bestval = 0 - result.0;
+            if bestval > beta {
+                beta = bestval;
+            }
+            if bestval >= test {
+                bettermoves.push(*mov);
+                test = bestval;
+                bestmove = Some(*mov);
+            }
+        }
+        movecnt = bettermoves.len() as i32;
+        let worsecnt = move_list.len() - bettermoves.len();
+        println!("info string worse {worsecnt} better {movecnt} alpha {alpha} beta {beta} test {test} depth {depth}");
+        
+        if movecnt == 0 {
+            beta = test;
+        } else {
+            alpha = test;
+            move_list.clear();
+            move_list.append(&mut bettermoves);
+        }
+        //println!("info string alpha {alpha} beta {finbeta} test {test} movecnt {movecnt} depth {depth}");
+        if move_list.len() == 1 || (beta-alpha) < 2 {
+            return (bestmove.unwrap(),transtable, finalpha, finbeta)
+        }
+        
+        if Instant::now().checked_duration_since(stoptime).is_some() {
+		    return (bestmove.unwrap(),transtable, alpha, beta);
+	    }
+    }
+    return (bestmove.unwrap(), transtable, alpha, finbeta)
+}
+
 pub fn alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, depth: i32, maxdepth: i32, stoptime: Instant, mut alpha: i32, beta: i32) -> (i32,HashMap<u64,Move>) {
     crate::NODE_CTR.store(crate::NODE_CTR.load(Ordering::Relaxed) + 1, Ordering::Relaxed); //increment node count
 	if Instant::now().checked_duration_since(stoptime).is_some() {
@@ -20,11 +69,10 @@ pub fn alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, depth: i32, max
 	}
 	let mut move_list = list_moves(brd);
 	if move_list.len() == 0 {
+        println!("info string mate");
 		if brd.checkers().len() == 0 {
 			return (0 + (maxdepth-depth),transtable);
 		} else {
-			let matescore = crate::NEG_INFINITY + (maxdepth-depth);
-			//println!("info string depth {depth} maxdepth {maxdepth} matescore {matescore}");
 			return (crate::NEG_INFINITY + (maxdepth-depth),transtable);
 		}
 	}
@@ -41,7 +89,7 @@ pub fn alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, depth: i32, max
 	for mov in move_list {
 		let mut new_brd = brd.clone();
 		new_brd.play(mov);
-		let result = alphabeta(&new_brd, transtable, depth - 1, maxdepth, stoptime, 0-beta , 0 - alpha);
+		let result = alphabeta(&new_brd, transtable, depth - 1, depth, stoptime, 0-beta , 0 - alpha);
         transtable = result.1;
 		let score = 0 - result.0;
 		if score >= beta {
@@ -59,7 +107,6 @@ pub fn alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, depth: i32, max
     if bestmove.is_some() {
         transtable.insert(brd.hash(),bestmove.unwrap());
     }
-
 	(bestscore,transtable)
 }
 
@@ -85,6 +132,5 @@ pub fn root_alphabeta(brd: &Board, mut transtable: HashMap<u64,Move>, stoptime: 
 		}
 	}
     //crate::SCORE.store(bestscore, Ordering::Relaxed);
-	//println!("{}", bestscore);
 	(bestmove.unwrap(),transtable,bestscore)
 }
